@@ -6,6 +6,7 @@
     # Keep the deployed project directory so Compose reuses the Jenkins data.
     ci_project_dir: /opt/jenkins
     jenkins_image: jenkins/jenkins:lts-jdk21
+    nexus_image: sonatype/nexus3:3.98.3
     jenkins_agent_secret: "{{ lookup('ansible.builtin.env', 'JENKINS_AGENT_SECRET') }}"
 
   pre_tasks:
@@ -16,13 +17,18 @@
       no_log: true
 
   tasks:
-    - name: Check the Jenkins image and port
+    - name: Check the CI images and ports
       ansible.builtin.assert:
         that:
           - jenkins_image is match('^jenkins/jenkins:[a-zA-Z0-9_][a-zA-Z0-9_.-]*$')
           - (jenkins_port | string) is match('^[0-9]+$')
           - (jenkins_port | int) >= 1024
           - (jenkins_port | int) <= 65535
+          - nexus_image is match('^sonatype/nexus3:[a-zA-Z0-9_][a-zA-Z0-9_.-]*$')
+          - (nexus_port | string) is match('^[0-9]+$')
+          - (nexus_port | int) >= 1024
+          - (nexus_port | int) <= 65535
+          - (nexus_port | int) != (jenkins_port | int)
 
     - name: Install Docker Engine and Compose
       ansible.builtin.import_tasks: tasks/docker.yml
@@ -74,6 +80,8 @@
         content: |
           JENKINS_IMAGE={{ jenkins_image }}
           JENKINS_PORT={{ jenkins_port | int }}
+          NEXUS_IMAGE={{ nexus_image }}
+          NEXUS_PORT={{ nexus_port | int }}
           COMPOSE_PROFILES={{ 'docker-agent' if jenkins_agent_secret_file.stat.exists else '' }}
           JENKINS_AGENT_SECRET_CHECKSUM={{ jenkins_agent_secret_file.stat.checksum | default('') }}
         dest: '{{ ci_project_dir }}/.env'
@@ -97,3 +105,14 @@
       changed_when: >-
         (ci_compose_up.stdout ~ '\n' ~ ci_compose_up.stderr)
         is search('(?m)\b(Created|Started|Recreated)\s*$')
+
+    - name: Wait for Nexus Repository to serve requests
+      ansible.builtin.uri:
+        url: 'http://127.0.0.1:{{ nexus_port | int }}/service/rest/v1/status'
+        use_proxy: false
+        status_code: 200
+        timeout: 5
+      register: nexus_status
+      until: nexus_status.status == 200
+      retries: 60
+      delay: 5

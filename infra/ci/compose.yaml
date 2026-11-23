@@ -23,12 +23,25 @@ services:
       start_period: 90s
       retries: 18
 
+  nexus:
+    image: ${NEXUS_IMAGE:-sonatype/nexus3:3.98.3}
+    restart: unless-stopped
+    stop_grace_period: 1m
+    ports:
+      - '127.0.0.1:${NEXUS_PORT:-8081}:8081'
+    volumes:
+      - nexus_data:/nexus-data
+
   docker-builder:
     profiles: [docker-agent]
     image: docker:29-dind
     privileged: true
     restart: unless-stopped
-    command: [dockerd, --host=unix:///run/build-docker/docker.sock, --group=1000]
+    command:
+      - dockerd
+      - --host=unix:///run/build-docker/docker.sock
+      - --group=1000
+      - --insecure-registry=nexus:8081
     volumes:
       - docker_builder_socket:/run/build-docker
       - docker_builder_data:/var/lib/docker
@@ -68,6 +81,7 @@ secrets:
     file: ./.secrets/jenkins-agent
 
 volumes:
+  nexus_data:
   docker_builder_socket:
   docker_builder_data:
   docker_agent_workspace:
