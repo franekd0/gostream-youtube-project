@@ -1,0 +1,24 @@
+# Retain the existing project name so Compose updates the deployed stack in place.
+name: jenkins
+
+services:
+  jenkins:
+    image: ${JENKINS_IMAGE:-jenkins/jenkins:lts-jdk21}
+    pull_policy: always
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:${JENKINS_PORT:-8080}:8080'
+    volumes:
+      - type: bind
+        source: ./data
+        target: /var/jenkins_home
+        bind:
+          create_host_path: false
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - curl -sS --noproxy '*' --max-time 4 -D - -o /dev/null http://127.0.0.1:8080/login | grep -qi '^X-Jenkins:'
+      interval: 5s
+      timeout: 5s
+      start_period: 90s
+      retries: 18

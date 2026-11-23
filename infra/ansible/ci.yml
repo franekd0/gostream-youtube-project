@@ -1,0 +1,65 @@
+---
+- name: Deploy the CI stack
+  hosts: ci
+  become: true
+  vars:
+    # Keep the deployed project directory so Compose reuses the Jenkins data.
+    ci_project_dir: /opt/jenkins
+    jenkins_image: jenkins/jenkins:lts-jdk21
+
+  tasks:
+    - name: Check the Jenkins image and port
+      ansible.builtin.assert:
+        that:
+          - jenkins_image is match('^jenkins/jenkins:[a-zA-Z0-9_][a-zA-Z0-9_.-]*$')
+          - (jenkins_port | string) is match('^[0-9]+$')
+          - (jenkins_port | int) >= 1024
+          - (jenkins_port | int) <= 65535
+
+    - name: Install Docker Engine and Compose
+      ansible.builtin.import_tasks: tasks/docker.yml
+      vars:
+        docker_repository: 'https://download.docker.com/linux/{{ ansible_facts["distribution"] | lower }}'
+
+    - name: Create the private Compose project directory
+      ansible.builtin.file:
+        path: '{{ ci_project_dir }}'
+        state: directory
+        owner: root
+        group: root
+        mode: '0700'
+
+    - name: Upload the Compose project and its build files
+      ansible.builtin.copy:
+        src: ../ci/
+        dest: '{{ ci_project_dir }}/'
+        owner: root
+        group: root
+        mode: preserve
+
+    - name: Configure the Compose environment
+      ansible.builtin.copy:
+        content: |
+          JENKINS_IMAGE={{ jenkins_image }}
+          JENKINS_PORT={{ jenkins_port | int }}
+        dest: '{{ ci_project_dir }}/.env'
+        owner: root
+        group: root
+        mode: '0600'
+
+    - name: Prepare the Jenkins home directory
+      ansible.builtin.file:
+        path: '{{ ci_project_dir }}/data'
+        state: directory
+        owner: '1000'
+        group: '1000'
+        mode: '0700'
+
+    - name: Build and start all CI services and wait for readiness
+      ansible.builtin.command:
+        argv: [docker, compose, --progress, plain, up, --detach, --build, --wait, --wait-timeout, '180']
+        chdir: '{{ ci_project_dir }}'
+      register: ci_compose_up
+      changed_when: >-
+        (ci_compose_up.stdout ~ '\n' ~ ci_compose_up.stderr)
+        is search('(?m)\b(Created|Started|Recreated)\s*$')
