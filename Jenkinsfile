@@ -7,6 +7,17 @@ pipeline {
     }
 
     stages {
+        stage('Run backend unit tests') {
+            steps {
+                sh '''#!/bin/bash
+                    set -euo pipefail
+                    # Stream the source because the Docker daemon runs in a separate container.
+                    tar -cf - -C backend . | docker run --rm -i --workdir /src golang:1.25-alpine \\
+                        sh -ec 'tar -xf - && go test -v ./...'
+                '''
+            }
+        }
+
         stage('Build and push images to Nexus') {
             steps {
                 withCredentials([usernamePassword(

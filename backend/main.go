@@ -19,7 +19,7 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 	}
 }
 
-func main() {
+func newHandler() http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /api/hello", func(w http.ResponseWriter, _ *http.Request) {
@@ -30,6 +30,10 @@ func main() {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
 
+	return mux
+}
+
+func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
@@ -37,8 +41,7 @@ func main() {
 
 	address := ":" + port
 	log.Printf("backend listening on %s", address)
-	if err := http.ListenAndServe(address, mux); err != nil {
+	if err := http.ListenAndServe(address, newHandler()); err != nil {
 		log.Fatal(err)
 	}
 }
-
