@@ -22,6 +22,9 @@ pipeline {
 
         stage('Build and push images to Nexus') {
             steps {
+                script {
+                    env.GOSTREAM_IMAGE_TAG = sh(script: 'git rev-parse HEAD', returnStdout: true).trim()
+                }
                 withCredentials([usernamePassword(
                     credentialsId: 'nexus-docker-publisher',
                     usernameVariable: 'NEXUS_USERNAME',
@@ -40,27 +43,35 @@ pipeline {
                             docker login --username "$NEXUS_USERNAME" --password-stdin "$NEXUS_REGISTRY"
                         unset NEXUS_USERNAME NEXUS_PASSWORD
 
-                        commit=$(git rev-parse HEAD)
                         for component in backend frontend; do
-                            image="$NEXUS_REGISTRY/$NEXUS_DOCKER_REPOSITORY/gostream-$component:$commit"
+                            image="$NEXUS_REGISTRY/$NEXUS_DOCKER_REPOSITORY/gostream-$component:$GOSTREAM_IMAGE_TAG"
                             printf 'Building and publishing %s\\n' "$image"
                             docker buildx build --tag "$image" \\
                                 --output type=image,push=true,store=false "./$component"
                         done
                     '''
                 }
+                script {
+                    if (env.BRANCH_NAME == 'main') {
+                        stash name: 'gostream-deployment', includes: 'compose.deploy.yaml,infra/deploy/deploy.sh'
+                    }
+                }
             }
         }
 
-        stage('Verify deployment agent') {
+        stage('Deploy GoStream on pis07') {
             when {
                 beforeAgent true
                 branch 'main'
             }
             agent { label 'deploy' }
             options { skipDefaultCheckout() }
+            environment {
+                DOCKER_CONFIG = '/home/jenkins/agent/.nexus-docker'
+            }
             steps {
-                sh 'docker compose ls'
+                unstash 'gostream-deployment'
+                sh 'sh infra/deploy/deploy.sh "$GOSTREAM_IMAGE_TAG"'
             }
         }
     }
