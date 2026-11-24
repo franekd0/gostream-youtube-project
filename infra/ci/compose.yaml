@@ -1,0 +1,73 @@
+# Retain the existing project name so Compose updates the deployed stack in place.
+name: jenkins
+
+services:
+  jenkins:
+    image: ${JENKINS_IMAGE:-jenkins/jenkins:lts-jdk21}
+    pull_policy: always
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:${JENKINS_PORT:-8080}:8080'
+    volumes:
+      - type: bind
+        source: ./data
+        target: /var/jenkins_home
+        bind:
+          create_host_path: false
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - curl -sS --noproxy '*' --max-time 4 -D - -o /dev/null http://127.0.0.1:8080/login | grep -qi '^X-Jenkins:'
+      interval: 5s
+      timeout: 5s
+      start_period: 90s
+      retries: 18
+
+  docker-builder:
+    profiles: [docker-agent]
+    image: docker:29-dind
+    privileged: true
+    restart: unless-stopped
+    command: [dockerd, --host=unix:///run/build-docker/docker.sock, --group=1000]
+    volumes:
+      - docker_builder_socket:/run/build-docker
+      - docker_builder_data:/var/lib/docker
+    healthcheck:
+      test: [CMD, docker, --host=unix:///run/build-docker/docker.sock, info]
+      interval: 5s
+      timeout: 5s
+      start_period: 30s
+      retries: 12
+
+  docker-agent:
+    profiles: [docker-agent]
+    build: ./docker-agent
+    restart: unless-stopped
+    depends_on:
+      jenkins:
+        condition: service_healthy
+      docker-builder:
+        condition: service_healthy
+    environment:
+      JENKINS_URL: http://jenkins:8080/
+      JENKINS_AGENT_NAME: docker
+      JENKINS_AGENT_WORKDIR: /home/jenkins/agent
+      JENKINS_WEB_SOCKET: 'true'
+      DOCKER_HOST: unix:///run/build-docker/docker.sock
+    command: [-secret, '@/run/secrets/jenkins_agent_secret']
+    labels:
+      org.gostream.jenkins-agent.secret-checksum: '${JENKINS_AGENT_SECRET_CHECKSUM:-}'
+    secrets:
+      - jenkins_agent_secret
+    volumes:
+      - docker_builder_socket:/run/build-docker:ro
+      - docker_agent_workspace:/home/jenkins/agent
+
+secrets:
+  jenkins_agent_secret:
+    file: ./.secrets/jenkins-agent
+
+volumes:
+  docker_builder_socket:
+  docker_builder_data:
+  docker_agent_workspace:
