@@ -76,7 +76,30 @@ services:
       - docker_builder_socket:/run/build-docker:ro
       - docker_agent_workspace:/home/jenkins/agent
 
+  deploy-agent:
+    profiles: [deploy-agent]
+    container_name: deploy-agent
+    build: ./deploy-agent
+    restart: unless-stopped
+    depends_on:
+      jenkins:
+        condition: service_healthy
+    environment:
+      JENKINS_URL: http://jenkins:8080/
+      JENKINS_AGENT_NAME: deploy
+      JENKINS_AGENT_WORKDIR: /home/jenkins/agent
+      JENKINS_WEB_SOCKET: 'true'
+    command: [-secret, '@/run/secrets/deploy_agent_secret']
+    labels:
+      org.gostream.deploy-agent.secret-checksum: '${DEPLOY_AGENT_SECRET_CHECKSUM:-}'
+    secrets:
+      - deploy_agent_secret
+    volumes:
+      - deploy_agent_workspace:/home/jenkins/agent
+
 secrets:
+  deploy_agent_secret:
+    file: ./.secrets/deploy-agent
   jenkins_agent_secret:
     file: ./.secrets/jenkins-agent
 
@@ -85,3 +108,5 @@ volumes:
   docker_builder_socket:
   docker_builder_data:
   docker_agent_workspace:
+  deploy_agent_workspace:
+    name: deploy_agent_workspace
