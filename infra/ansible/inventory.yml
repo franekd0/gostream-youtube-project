@@ -9,3 +9,4 @@ all:
           ansible_ssh_common_args: "-o ProxyJump={{ (ansible_user ~ '@galera.ii.pw.edu.pl') | quote }}"
       vars:
         jenkins_port: 8080
+        nexus_port: 8081

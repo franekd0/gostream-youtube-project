@@ -1,1 +1,1 @@
-# gostream-youtube-project
+# GoStream project
