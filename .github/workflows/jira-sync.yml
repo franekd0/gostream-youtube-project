@@ -1,0 +1,63 @@
+
+name: Jira Sync
+
+on:
+  pull_request_review:
+    types: [submitted]
+  pull_request:
+    types: [review_requested, ready_for_review, reopened]
+
+permissions: {}
+
+jobs:
+  sync-jira:
+    if: >
+      github.event.review.state == 'changes_requested' ||
+      github.event.review.state == 'approved' ||
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.draft == false)
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Synchronize Jira
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          REVIEWER: ${{ github.event.review.user.login }}
+          REVIEW_STATE: ${{ github.event.review.state }}
+          REVIEW_COMMENT: ${{ github.event.review.body }}
+          JIRA_URL: ${{ secrets.JIRA_WEBHOOK_URL }}
+          JIRA_TOKEN: ${{ secrets.JIRA_WEBHOOK_SECRET }}
+
+        run: |
+          ISSUE=$(printf '%s\n' "$PR_TITLE" "$BRANCH" \
+            | grep -oE '[A-Z][A-Z0-9]*-[0-9]+' \
+            | head -n 1 || true)
+
+          if [ -z "$ISSUE" ]; then
+            echo "No Jira issue found"
+            exit 0
+          fi
+
+          EVENT="${REVIEW_STATE:-review_requested}"
+
+          PAYLOAD=$(jq -n \
+            --arg issue "$ISSUE" \
+            --arg event "$EVENT" \
+            --arg reviewer "$REVIEWER" \
+            --arg comment "$REVIEW_COMMENT" \
+            --arg url "$PR_URL" \
+            '{
+              issues: [$issue],
+              event: $event,
+              reviewer: $reviewer,
+              comment: $comment,
+              pr_url: $url
+            }')
+
+          curl --fail-with-body -X POST "$JIRA_URL" \
+            -H "Content-Type: application/json" \
+            -H "X-Automation-Webhook-Token: $JIRA_TOKEN" \
+            -d "$PAYLOAD"
