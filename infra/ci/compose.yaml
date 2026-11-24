@@ -94,8 +94,15 @@ services:
       org.gostream.deploy-agent.secret-checksum: '${DEPLOY_AGENT_SECRET_CHECKSUM:-}'
     secrets:
       - deploy_agent_secret
+    group_add:
+      - '${DOCKER_SOCKET_GID:-docker}'
     volumes:
       - deploy_agent_workspace:/home/jenkins/agent
+      - type: bind
+        source: /var/run/docker.sock
+        target: /var/run/docker.sock
+        bind:
+          create_host_path: false
 
 secrets:
   deploy_agent_secret:

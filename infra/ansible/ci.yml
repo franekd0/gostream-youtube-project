@@ -98,6 +98,20 @@
         checksum_algorithm: sha256
       register: deploy_agent_secret_file
 
+    - name: Read the Docker host socket group for the deploy agent
+      ansible.builtin.stat:
+        path: /var/run/docker.sock
+        follow: true
+        get_checksum: false
+      register: docker_host_socket
+      when: deploy_agent_secret_file.stat.exists
+
+    - name: Verify that the Docker host socket is available
+      ansible.builtin.assert:
+        that: docker_host_socket.stat.issock | default(false)
+        fail_msg: The deploy agent requires the Docker socket at /var/run/docker.sock.
+      when: deploy_agent_secret_file.stat.exists
+
     - name: Configure the Compose environment
       vars:
         agent_profiles: >-
@@ -110,6 +124,7 @@
           NEXUS_IMAGE={{ nexus_image }}
           NEXUS_PORT={{ nexus_port | int }}
           COMPOSE_PROFILES={{ agent_profiles | join(',') }}
+          DOCKER_SOCKET_GID={{ (docker_host_socket.stat | default({})).gid | default('') }}
           DEPLOY_AGENT_SECRET_CHECKSUM={{ deploy_agent_secret_file.stat.checksum | default('') }}
           JENKINS_AGENT_SECRET_CHECKSUM={{ jenkins_agent_secret_file.stat.checksum | default('') }}
         dest: '{{ ci_project_dir }}/.env'
