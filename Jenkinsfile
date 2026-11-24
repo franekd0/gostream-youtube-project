@@ -60,7 +60,7 @@ pipeline {
             agent { label 'deploy' }
             options { skipDefaultCheckout() }
             steps {
-                sh 'hostname'
+                sh 'docker compose ls'
             }
         }
     }
