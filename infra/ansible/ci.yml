@@ -8,8 +8,15 @@
     jenkins_image: jenkins/jenkins:lts-jdk21
     nexus_image: sonatype/nexus3:3.98.3
     jenkins_agent_secret: "{{ lookup('ansible.builtin.env', 'JENKINS_AGENT_SECRET') }}"
+    deploy_agent_secret: "{{ lookup('ansible.builtin.env', 'DEPLOY_AGENT_SECRET') }}"
 
   pre_tasks:
+    - name: Check the inbound deploy agent secret when provided
+      ansible.builtin.assert:
+        that: deploy_agent_secret is match('^[0-9a-fA-F]{64}$')
+      when: deploy_agent_secret | length > 0
+      no_log: true
+
     - name: Check the inbound Docker agent secret when provided
       ansible.builtin.assert:
         that: jenkins_agent_secret is match('^[0-9a-fA-F]{64}$')
@@ -75,14 +82,35 @@
         checksum_algorithm: sha256
       register: jenkins_agent_secret_file
 
+    - name: Store the inbound deploy agent secret when provided
+      ansible.builtin.copy:
+        content: '{{ deploy_agent_secret }}'
+        dest: '{{ ci_project_dir }}/.secrets/deploy-agent'
+        owner: root
+        group: '1000'
+        mode: '0440'
+      when: deploy_agent_secret | length > 0
+      no_log: true
+
+    - name: Check whether the deploy agent has been configured
+      ansible.builtin.stat:
+        path: '{{ ci_project_dir }}/.secrets/deploy-agent'
+        checksum_algorithm: sha256
+      register: deploy_agent_secret_file
+
     - name: Configure the Compose environment
+      vars:
+        agent_profiles: >-
+          {{ (['docker-agent'] if jenkins_agent_secret_file.stat.exists else [])
+             + (['deploy-agent'] if deploy_agent_secret_file.stat.exists else []) }}
       ansible.builtin.copy:
         content: |
           JENKINS_IMAGE={{ jenkins_image }}
           JENKINS_PORT={{ jenkins_port | int }}
           NEXUS_IMAGE={{ nexus_image }}
           NEXUS_PORT={{ nexus_port | int }}
-          COMPOSE_PROFILES={{ 'docker-agent' if jenkins_agent_secret_file.stat.exists else '' }}
+          COMPOSE_PROFILES={{ agent_profiles | join(',') }}
+          DEPLOY_AGENT_SECRET_CHECKSUM={{ deploy_agent_secret_file.stat.checksum | default('') }}
           JENKINS_AGENT_SECRET_CHECKSUM={{ jenkins_agent_secret_file.stat.checksum | default('') }}
         dest: '{{ ci_project_dir }}/.env'
         owner: root

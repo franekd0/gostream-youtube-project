@@ -1,6 +1,8 @@
 pipeline {
     agent { label 'docker' }
 
+    options { disableConcurrentBuilds() }
+
     environment {
         NEXUS_REGISTRY = 'nexus:8081'
         NEXUS_DOCKER_REPOSITORY = 'gostream'
@@ -47,6 +49,18 @@ pipeline {
                         done
                     '''
                 }
+            }
+        }
+
+        stage('Verify deployment agent') {
+            when {
+                beforeAgent true
+                branch 'main'
+            }
+            agent { label 'deploy' }
+            options { skipDefaultCheckout() }
+            steps {
+                sh 'hostname'
             }
         }
     }
