@@ -13,10 +13,37 @@ pipeline {
             steps {
                 sh '''#!/bin/bash
                     set -euo pipefail
+                    coverage_report=$(mktemp ./go-coverage.XXXXXX)
+                    trap 'rm -f -- "$coverage_report"' EXIT
+
                     # Stream the source because the Docker daemon runs in a separate container.
                     tar -cf - -C backend . | docker run --rm -i --workdir /src golang:1.25-alpine \\
-                        sh -ec 'tar -xf - && go test -v ./...'
+                        sh -ec 'tar -xf - && go test -v -coverprofile=coverage.out ./... >&2 && cat coverage.out' \\
+                        > "$coverage_report"
+                    test -s "$coverage_report"
+                    mv -f -- "$coverage_report" go-coverage.out
                 '''
+            }
+        }
+
+        stage('Analyze with SonarQube') {
+            when { branch 'main' }
+            steps {
+                script {
+                    def scannerHome = tool 'SonarScanner CLI'
+                    withSonarQubeEnv('SonarQube') {
+                        withEnv(["SONAR_SCANNER_HOME=${scannerHome}"]) {
+                            sh '''
+                                "$SONAR_SCANNER_HOME/bin/sonar-scanner" \\
+                                    -Dsonar.projectKey=gostream \\
+                                    -Dsonar.sources=backend,frontend/src \\
+                                    -Dsonar.tests=backend \\
+                                    '-Dsonar.test.inclusions=backend/**/*_test.go' \\
+                                    -Dsonar.go.coverage.reportPaths=go-coverage.out
+                            '''
+                        }
+                    }
+                }
             }
         }
 
