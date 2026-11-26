@@ -8,14 +8,35 @@
     jenkins_image: jenkins/jenkins:lts-jdk21
     nexus_image: sonatype/nexus3:3.98.3
     jenkins_agent_secret: "{{ lookup('ansible.builtin.env', 'JENKINS_AGENT_SECRET') }}"
-    sonar_db_secret: "{{ lookup('ansible.builtin.env', 'SONAR_DB_PASSWORD') }}"
+    sonar_db_override: >-
+      {{ lookup('ansible.builtin.env', 'SONAR_DB_PASSWORD') or
+         (lookup('ansible.builtin.ini', 'SONAR_DB_PASSWORD', type='properties',
+                 file=ci_local_env_file, interpolation=false, errors='ignore') | default('', true)) }}
+    sonar_db_secret: >-
+      {{ sonar_db_override or
+         (ci_existing_env_content.content | default('') | b64decode
+          | regex_findall('(?m)^SONAR_DB_PASSWORD=([^\r\n]*)\r?$') | last | default('')) }}
     deploy_agent_secret: "{{ lookup('ansible.builtin.env', 'DEPLOY_AGENT_SECRET') }}"
 
   pre_tasks:
+    - name: Check for the deployed Compose environment
+      ansible.builtin.stat:
+        path: "{{ ci_project_dir }}/.env"
+        get_checksum: false
+      register: ci_existing_env
+      when: sonar_db_override | length == 0
+
+    - name: Read the deployed SonarQube database configuration
+      ansible.builtin.slurp:
+        src: "{{ ci_project_dir }}/.env"
+      register: ci_existing_env_content
+      when: ci_existing_env.stat.isreg | default(false)
+      no_log: true
+
     - name: Verify that the SonarQube database password is set
       ansible.builtin.assert:
         that: sonar_db_secret | length > 0
-        fail_msg: Set SONAR_DB_PASSWORD before deploying.
+        fail_msg: Set SONAR_DB_PASSWORD in the project .env file for the initial deployment.
       no_log: true
     - name: Check the inbound deploy agent secret when provided
       ansible.builtin.assert:
@@ -119,6 +140,8 @@
       when: deploy_agent_secret_file.stat.exists
 
     - name: Configure the Compose environment
+      no_log: true
+      diff: false
       vars:
         agent_profiles: >-
           {{ (['docker-agent'] if jenkins_agent_secret_file.stat.exists else [])
