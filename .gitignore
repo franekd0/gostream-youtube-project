@@ -1,4 +1,5 @@
 .env
+/infra/big_env/grafana-admin-password
 .DS_Store
 node_modules/
 dist/

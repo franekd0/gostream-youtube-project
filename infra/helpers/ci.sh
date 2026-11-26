@@ -4,9 +4,10 @@ set -euo pipefail
 usage() {
   cat <<'EOF'
 Usage: ./infra/helpers/ci.sh
-       ./infra/helpers/ci.sh {jenkins|nexus} [local-port] [remote-port]
+       ./infra/helpers/ci.sh {jenkins|nexus|grafana|prometheus} [local-port] [remote-port]
 
-Open a single SSH connection through galera for Jenkins (8080) and Nexus (8081).
+Open one SSH connection through galera for Jenkins (8080), Nexus (8081),
+Grafana (3001), and Prometheus (9090).
 Specify a service to forward only its port.
 EOF
 }
@@ -57,7 +58,7 @@ open_service_tunnel() {
 }
 
 if (( $# == 0 )); then
-  open_tunnel 8080 8080 8081 8081
+  open_tunnel 8080 8080 8081 8081 3001 3001 9090 9090
 fi
 
 case $1 in
@@ -68,6 +69,14 @@ case $1 in
   nexus)
     shift
     open_service_tunnel 8081 "$@"
+    ;;
+  grafana)
+    shift
+    open_service_tunnel 3001 "$@"
+    ;;
+  prometheus|prom)
+    shift
+    open_service_tunnel 9090 "$@"
     ;;
   help|-h|--help)
     usage
