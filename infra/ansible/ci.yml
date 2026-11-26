@@ -36,7 +36,7 @@
     - name: Verify that the SonarQube database password is set
       ansible.builtin.assert:
         that: sonar_db_secret | length > 0
-        fail_msg: Set SONAR_DB_PASSWORD in the project .env file for the initial deployment.
+        fail_msg: Set SONAR_DB_PASSWORD before deploying.
       no_log: true
     - name: Check the inbound deploy agent secret when provided
       ansible.builtin.assert:
