@@ -34,6 +34,36 @@ services:
     volumes:
       - prometheus_data:/prometheus
 
+  loki:
+    image: grafana/loki:3.7.10
+    restart: unless-stopped
+    command: [-config.file=/etc/loki/gostream.yml]
+    labels:
+      org.gostream.loki-config.checksum: '${LOKI_CONFIG_CHECKSUM:-}'
+    configs:
+      - source: loki_config
+        target: /etc/loki/gostream.yml
+    volumes:
+      - loki_data:/loki
+
+  alloy:
+    image: grafana/alloy:v1.22.0
+    restart: unless-stopped
+    command: [run, --storage.path=/var/lib/alloy/data, /etc/alloy/config.alloy]
+    labels:
+      org.gostream.alloy-config.checksum: '${ALLOY_CONFIG_CHECKSUM:-}'
+    configs:
+      - source: alloy_config
+        target: /etc/alloy/config.alloy
+    volumes:
+      - alloy_data:/var/lib/alloy/data
+      - type: bind
+        source: /var/run/docker.sock
+        target: /var/run/docker.sock
+        read_only: true
+        bind:
+          create_host_path: false
+
   node-exporter:
     image: quay.io/prometheus/node-exporter:v1.13.1
     restart: unless-stopped
@@ -70,6 +100,10 @@ configs:
     file: ./grafana-datasource.yml
   prometheus_config:
     file: ./prometheus.yml
+  loki_config:
+    file: ./loki.yml
+  alloy_config:
+    file: ./config.alloy
 
 secrets:
   grafana_admin_password:
@@ -78,3 +112,5 @@ secrets:
 volumes:
   grafana_data:
   prometheus_data:
+  loki_data:
+  alloy_data:

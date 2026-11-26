@@ -31,12 +31,16 @@
         - compose.yaml
         - grafana-datasource.yml
         - prometheus.yml
+        - loki.yml
+        - config.alloy
 
     - name: Configure container recreation when a service configuration changes
       ansible.builtin.copy:
         content: |
           PROMETHEUS_CONFIG_CHECKSUM={{ lookup('ansible.builtin.file', big_env_source_dir ~ '/prometheus.yml', rstrip=false) | hash('sha256') }}
           GRAFANA_DATASOURCE_CHECKSUM={{ lookup('ansible.builtin.file', big_env_source_dir ~ '/grafana-datasource.yml', rstrip=false) | hash('sha256') }}
+          LOKI_CONFIG_CHECKSUM={{ lookup('ansible.builtin.file', big_env_source_dir ~ '/loki.yml', rstrip=false) | hash('sha256') }}
+          ALLOY_CONFIG_CHECKSUM={{ lookup('ansible.builtin.file', big_env_source_dir ~ '/config.alloy', rstrip=false) | hash('sha256') }}
         dest: "{{ big_env_project_dir }}/.env"
         owner: root
         group: root
@@ -56,6 +60,15 @@
       ansible.builtin.command:
         argv: [docker, compose, run, --rm, --no-deps, --entrypoint, /bin/promtool, prometheus, check, config, /etc/prometheus/prometheus.yml]
         chdir: "{{ big_env_project_dir }}"
+      changed_when: false
+
+    - name: Validate the log collection and storage configuration
+      ansible.builtin.command:
+        argv: "{{ item }}"
+        chdir: "{{ big_env_project_dir }}"
+      loop:
+        - [docker, compose, run, --rm, --no-deps, loki, -config.file=/etc/loki/gostream.yml, -verify-config]
+        - [docker, compose, run, --rm, --no-deps, alloy, validate, /etc/alloy/config.alloy]
       changed_when: false
 
     - name: Start the monitoring stack
