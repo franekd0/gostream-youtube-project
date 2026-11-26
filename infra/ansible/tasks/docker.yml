@@ -63,10 +63,10 @@
 - name: Read the Docker server version
   ansible.builtin.command:
     argv: [docker, version, --format, !unsafe "{{.Server.Version}}"]
-  register: ci_docker_version
+  register: docker_server_version
   changed_when: false
 
 - name: Check that Docker supports private loopback publishing
   ansible.builtin.assert:
-    that: ci_docker_version.stdout is version('28.0.0', '>=')
-    fail_msg: Upgrade Docker Engine to 28.0.0 or newer before deploying the CI stack.
+    that: docker_server_version.stdout is version('28.0.0', '>=')
+    fail_msg: Upgrade Docker Engine to 28.0.0 or newer before deploying loopback-only services.

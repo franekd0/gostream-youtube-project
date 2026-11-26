@@ -1,12 +1,17 @@
 all:
+  hosts:
+    pis07:
+      ansible_host: pis07.ii.pw.edu.pl
+      ansible_user: "{{ (lookup('ansible.builtin.env', 'JENKINS_SSH_USER') | trim) or undef(hint='Set JENKINS_SSH_USER in .env and export it before running Ansible.') }}"
+      ansible_connection: ssh
+      ansible_ssh_common_args: "-o ProxyJump={{ (ansible_user ~ '@galera.ii.pw.edu.pl') | quote }}"
   children:
     ci:
       hosts:
         pis07:
-          ansible_host: pis07.ii.pw.edu.pl
-          ansible_user: "{{ (lookup('ansible.builtin.env', 'JENKINS_SSH_USER') | trim) or undef(hint='Set JENKINS_SSH_USER in .env and export it before running Ansible.') }}"
-          ansible_connection: ssh
-          ansible_ssh_common_args: "-o ProxyJump={{ (ansible_user ~ '@galera.ii.pw.edu.pl') | quote }}"
       vars:
         jenkins_port: 8080
         nexus_port: 8081
+    big_env:
+      hosts:
+        pis07:
