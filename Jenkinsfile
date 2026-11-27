@@ -17,7 +17,7 @@ pipeline {
                     trap 'rm -f -- "$coverage_report"' EXIT
 
                     # Stream the source because the Docker daemon runs in a separate container.
-                    tar -cf - -C backend . | docker run --rm -i --workdir /src golang:1.25-alpine \\
+                    tar -cf - -C backend . | docker run --rm -i --workdir /src golang:1.27.4-alpine \\
                         sh -ec 'tar -xf - && go test -v -coverprofile=coverage.out ./... >&2 && cat coverage.out' \\
                         > "$coverage_report"
                     test -s "$coverage_report"
