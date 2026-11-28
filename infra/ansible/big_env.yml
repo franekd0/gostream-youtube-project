@@ -1,0 +1,97 @@
+---
+- name: Deploy the big environment monitoring stack
+  hosts: big_env
+  become: true
+  vars:
+    big_env_project_dir: /opt/gostream-big-env
+    big_env_source_dir: "{{ playbook_dir }}/../big_env"
+
+  tasks:
+    - name: Install Docker Engine and Compose
+      ansible.builtin.import_tasks: tasks/docker.yml
+      vars:
+        docker_repository: 'https://download.docker.com/linux/{{ ansible_facts["distribution"] | lower }}'
+
+    - name: Create the private Compose project directory
+      ansible.builtin.file:
+        path: "{{ big_env_project_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+
+    - name: Upload the Compose project and service configurations
+      ansible.builtin.copy:
+        src: "{{ big_env_source_dir }}/{{ item }}"
+        dest: "{{ big_env_project_dir }}/{{ item }}"
+        owner: root
+        group: root
+        mode: "0644"
+      loop:
+        - compose.yaml
+        - grafana-datasource.yml
+        - prometheus.yml
+
+    - name: Configure container recreation when a service configuration changes
+      ansible.builtin.copy:
+        content: |
+          PROMETHEUS_CONFIG_CHECKSUM={{ lookup('ansible.builtin.file', big_env_source_dir ~ '/prometheus.yml', rstrip=false) | hash('sha256') }}
+          GRAFANA_DATASOURCE_CHECKSUM={{ lookup('ansible.builtin.file', big_env_source_dir ~ '/grafana-datasource.yml', rstrip=false) | hash('sha256') }}
+        dest: "{{ big_env_project_dir }}/.env"
+        owner: root
+        group: root
+        mode: "0600"
+
+    - name: Generate Grafana's initial admin password once
+      ansible.builtin.copy:
+        content: "{{ lookup('ansible.builtin.password', '/dev/null', length=32, chars=['ascii_letters', 'digits']) }}\n"
+        dest: "{{ big_env_project_dir }}/grafana-admin-password"
+        owner: "472"
+        group: root
+        mode: "0400"
+        force: false
+      no_log: true
+
+    - name: Validate the Prometheus configuration
+      ansible.builtin.command:
+        argv: [docker, compose, run, --rm, --no-deps, --entrypoint, /bin/promtool, prometheus, check, config, /etc/prometheus/prometheus.yml]
+        chdir: "{{ big_env_project_dir }}"
+      changed_when: false
+
+    - name: Start the monitoring stack
+      ansible.builtin.command:
+        argv: [docker, compose, --progress, plain, up, --detach]
+        chdir: "{{ big_env_project_dir }}"
+      register: big_env_compose_up
+      changed_when: >-
+        (big_env_compose_up.stdout ~ '\n' ~ big_env_compose_up.stderr)
+        is search('(?m)\b(Created|Started|Recreated)\s*$')
+
+    - name: Wait for the monitoring services to respond
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ item }}"
+        use_proxy: false
+        status_code: 200
+        timeout: 5
+      loop:
+        - '9090/-/ready'
+        - '3001/api/health'
+      register: big_env_service_health
+      until: big_env_service_health.status | default(0) == 200
+      retries: 30
+      delay: 3
+      when: not ansible_check_mode
+
+    - name: Wait for Prometheus to collect host and container metrics
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:9090/api/v1/query?query={{ item | urlencode }}"
+        use_proxy: false
+        timeout: 5
+      loop:
+        - 'node_exporter_build_info{job="node_exporter"}'
+        - 'container_memory_working_set_bytes{job="cadvisor",name!=""}'
+      register: big_env_metrics
+      until: (big_env_metrics.json.data.result | default([]) | length) > 0
+      retries: 30
+      delay: 3
+      when: not ansible_check_mode

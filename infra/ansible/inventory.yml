@@ -1,17 +1,14 @@
 all:
+  hosts:
+    pis07:
+      ansible_host: pis07.ii.pw.edu.pl
+      ansible_user: "{{ (lookup('ansible.builtin.env', 'JENKINS_SSH_USER') | trim) or undef(hint='Set JENKINS_SSH_USER in .env and export it before running Ansible.') }}"
+      ansible_connection: ssh
+      ansible_ssh_common_args: "-o ProxyJump={{ (ansible_user ~ '@galera.ii.pw.edu.pl') | quote }}"
   children:
     ci:
       hosts:
         pis07:
-          ansible_host: pis07.ii.pw.edu.pl
-          ansible_user: >-
-            {{ ((lookup('ansible.builtin.env', 'JENKINS_SSH_USER') | trim) or
-                (lookup('ansible.builtin.ini', 'JENKINS_SSH_USER', type='properties',
-                        file=ci_local_env_file, interpolation=false, errors='ignore')
-                 | default('', true) | trim | trim("\"'")))
-               or undef(hint='Set JENKINS_SSH_USER in the project .env file.') }}
-          ansible_connection: ssh
-          ansible_ssh_common_args: "-o ProxyJump={{ (ansible_user ~ '@' ~ ci_ssh_jump_host) | quote }}"
       vars:
         ci_local_env_file: "{{ inventory_dir }}/../../.env"
         ci_ssh_jump_host: >-
@@ -20,3 +17,6 @@ all:
              | default('', true) | trim | trim("\"'") | default('galera.ii.pw.edu.pl', true) }}
         jenkins_port: 8080
         nexus_port: 8081
+    big_env:
+      hosts:
+        pis07:
